@@ -1,0 +1,1149 @@
+<template>
+  <transition name="modal-scale">
+    <div class="send" v-show="show" :class="{ 'is-minimized': isMinimized }">
+    <div class="write-box arc-card" :inert="savingDraft">
+      <!-- 顶栏组件（支持全屏和最小化挂起胶囊两种形态） -->
+      <ComposeHeader
+        v-model="form.accountId"
+        :account-options="accountOptions"
+        :subject="form.subject"
+        :is-minimized="isMinimized"
+        @change="onSendAccountChange"
+        @toggle-minimize="isMinimized = !isMinimized"
+        @close="close"
+      />
+
+      <div class="container" v-show="!isMinimized">
+        <!-- 收件人输入行 -->
+        <div class="compose-field-row">
+          <div class="field-label">{{ $t('recipient') }}：</div>
+          <div class="field-input-wrapper">
+            <el-input-tag
+              @add-tag="addTagChange"
+              tag-type="primary"
+              @input="inputChange"
+              size="default"
+              v-model="form.receiveEmail"
+              class="compose-tag-input"
+              :placeholder="$t('recipientPlaceholder')"
+            >
+              <template #prefix>
+                <el-select
+                  ref="mySelect"
+                  class="write-select"
+                  popper-class="write-select"
+                  :show-arrow="false"
+                  :no-match-text="' '"
+                  :no-data-text="' '"
+                  @visible-change="selectStatusChange"
+                  @change="selectChange"
+                >
+                  <el-option
+                    v-for="item in selectRecipientList"
+                    :key="item"
+                    :label="item"
+                    :value="item"
+                    style="color: var(--regular-text-color);"
+                  />
+                </el-select>
+              </template>
+              <template #suffix>
+                <div class="recipient-suffix-actions">
+                  <button type="button" class="field-tool-btn" :aria-expanded="showCcBcc" @click.stop="showCcBcc = !showCcBcc">{{ $t('mailRecipients.showCcBcc') }}</button>
+                  <el-tooltip :content="$t('chooseContact')" placement="top" :show-after="100">
+                    <button type="button" class="field-tool-btn" @click.stop="openContacts">
+                      <Icon icon="solar:users-group-rounded-linear" width="16" height="16" />
+                      <span>{{ $t('contacts') }}</span>
+                    </button>
+                  </el-tooltip>
+                </div>
+              </template>
+            </el-input-tag>
+          </div>
+        </div>
+
+        <template v-if="showCcBcc">
+          <div v-for="field in ['cc', 'bcc']" :key="field" class="compose-field-row">
+            <label class="field-label" :for="'compose-' + field">{{ $t(field) }}：</label>
+            <div class="field-input-wrapper">
+              <el-input-tag :id="'compose-' + field" v-model="form[field]" class="compose-tag-input"
+                :aria-label="$t(field)" :placeholder="$t('recipientPlaceholder')" @add-tag="value => addSecondaryTag(field, value)" />
+            </div>
+          </div>
+          <p class="bcc-privacy-hint">{{ $t('mailRecipients.bccPrivacy') }}</p>
+        </template>
+
+        <!-- 主题输入行 -->
+        <div class="compose-field-row">
+          <div class="field-label">{{ t('subject') }}：</div>
+          <div class="field-input-wrapper">
+            <el-input
+              v-model="form.subject"
+              :placeholder="t('subjectPlaceholder')"
+              class="compose-subject-input"
+              clearable
+            />
+          </div>
+        </div>
+
+        <!-- 富文本编辑器区 -->
+        <div class="compose-editor-area">
+          <tinyEditor :def-value="defValue" ref="editor" @change="change" @focus="focusChange" />
+        </div>
+
+        <!-- 底部操作栏与附件区 -->
+        <div class="compose-bottom-bar">
+          <div class="bottom-left-group">
+            <el-button
+              type="primary"
+              class="arc-btn send-btn-primary"
+              :disabled="isDraftAccountInvalid || senderDomainDisabled"
+              @click="sendEmail"
+            >
+              <Icon icon="solar:plain-2-linear" width="16" height="16" style="margin-right: 5px" />
+              <span v-if="form.sendType === 'reply'">{{ $t('reply') }}</span>
+              <span v-else-if="form.sendType === 'forward'">{{ $t('forward') }}</span>
+              <span v-else>{{ $t('send') }}</span>
+              <span class="key-shortcut">Ctrl+Enter</span>
+            </el-button>
+
+            <button type="button" class="bottom-tool-btn" @click="saveDraft" :title="$t('saveDraft')" :disabled="savingDraft">
+              <Icon icon="solar:document-text-linear" width="16" height="16" />
+              <span>{{ $t('saveDraft') }}</span>
+            </button>
+
+            <button type="button" class="bottom-tool-btn" @click="chooseFile" :title="$t('addAttachment')">
+              <Icon icon="solar:paperclip-2-linear" width="18" height="18" />
+              <span>{{ $t('addAttachment') }}</span>
+            </button>
+
+            <button type="button" class="bottom-tool-btn danger" @click="clearContent" :title="$t('clearAllContent')">
+              <Icon icon="solar:eraser-linear" width="17" height="17" />
+              <span>{{ $t('clearAll') }}</span>
+            </button>
+          </div>
+
+          <!-- 附件列表组件展示 -->
+          <div class="bottom-center-attachments" v-if="form.attachments && form.attachments.length > 0">
+            <ComposeAttachments :attachments="form.attachments" @delete="delAtt" />
+          </div>
+
+          <!-- 右侧失效/状态提示 -->
+          <div class="bottom-right-group">
+            <div v-if="isDraftAccountInvalid" class="account-invalid-tip">
+              {{ $t('senderMailboxInvalid') }}
+            </div>
+            <div v-else-if="senderDomainDisabled" class="account-invalid-tip" role="status">{{ $t('domainManagement.senderDisabled') }}</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 通讯录选择弹窗 -->
+    <ComposeContactsModal
+      v-model:visible="showContacts"
+      :contacts="contactStore.contacts"
+      :recent-recipients="writerStore.sendRecipientRecord"
+      :current-recipients="form.receiveEmail"
+      @select="onContactsSelected"
+      @delete-recent="onDeleteRecentRecipient"
+      @clear-recent="onClearRecentRecipients"
+    />
+  </div>
+  </transition>
+</template>
+
+<script setup>
+import { computed, h, nextTick, onMounted, onUnmounted, reactive, ref, toRaw, watch } from 'vue'
+import { Icon } from '@iconify/vue'
+import tinyEditor from '@/components/tiny-editor/index.vue'
+import ComposeHeader from './components/ComposeHeader.vue'
+import ComposeAttachments from './components/ComposeAttachments.vue'
+import ComposeContactsModal from './components/ComposeContactsModal.vue'
+import {useUserStore} from "@/store/user.js";
+import {useSettingStore} from '@/store/setting.js'
+import {isMailboxDomainEnabled} from '@/utils/domain-management.js'
+import {emailSend, mailIdentities} from "@/request/email.js";
+import {accountGetDefaultSend} from '@/request/account.js';
+import {isEmail} from "@/utils/verify-utils.js";
+import {useAccountStore} from "@/store/account.js";
+import {useEmailStore} from "@/store/email.js";
+import {fileToBase64, formatBytes} from "@/utils/file-utils.js";
+import {getIconByName} from "@/utils/icon-utils.js";
+import sendPercent from "@/components/send-percent/index.vue"
+import {formatDetailDate} from "@/utils/day.js";
+import {userDraftStore} from "@/store/draft.js";
+import {useWriterStore} from "@/store/writer.js";
+import db from "@/db/db.js";
+import {normalizeDraftUserId, requireDraftDatabaseOwner} from '@/db/owned-draft-database.js';
+import dayjs from "dayjs";
+import {useI18n} from "vue-i18n";
+import router from "@/router/index.js";
+import {ElMessage, ElMessageBox, ElNotification} from "element-plus";
+import {useContactStore} from "@/store/contact.js";
+import {useUiStore} from "@/store/ui.js";
+import {sanitizeEmailHtml} from "@/utils/html-sanitizer.js";
+import {buildQuotedEmailHtml} from "@/utils/compose-quote.js";
+import {sendFeedback} from "@/utils/send-feedback.js";
+import {
+  createComposeLoadGate,
+  editorSnapshot,
+  findComposeAccount,
+  normalizeReplySubject,
+  replyContext,
+  loadReplyAllContext,
+  composeRecipientSnapshot,
+} from "@/utils/compose-state.js";
+import {
+  clearPendingSendDraft,
+  createSendActivityGate,
+  guardPendingSendUnload,
+  persistPendingSendDraft,
+} from "@/db/pending-send-recovery.js";
+
+defineExpose({
+  open,
+  openReply,
+  openReplyAll,
+  openForward,
+  openDraft,
+  clearContent
+})
+
+const isMinimized = ref(false)
+const savingDraft = ref(false)
+const {t} = useI18n()
+const writerStore = useWriterStore();
+const contactStore = useContactStore();
+const uiStore = useUiStore();
+const draftStore = userDraftStore()
+const emailStore = useEmailStore();
+const accountStore = useAccountStore()
+const editor = ref({})
+const defValue = ref('')
+const userStore = useUserStore();
+const settingStore = useSettingStore()
+const show = ref(false);
+const percent = ref(0)
+let percentMessage = null
+let sending = false
+let pendingSend = null
+const sendActivity = createSendActivityGate(() => Boolean(pendingSend || sending))
+const undoCountdown = ref(5)
+const isDraftAccountInvalid = ref(false);
+const composeLoad = createComposeLoadGate();
+
+const senderAccounts = computed(() => {
+  const list = [...(userStore.user.accountList || []), ...(accountStore.accountList || [])]
+    .filter((account, index, all) => all.findIndex(item => String(item.accountId) === String(account.accountId)) === index);
+  if (userStore.user?.email) {
+    const mainEmail = userStore.user.email;
+    const hasMain = list.some(item => item.email?.toLowerCase() === mainEmail.toLowerCase());
+    if (!hasMain) {
+      return [{
+        accountId: userStore.user.account?.accountId || 0,
+        email: mainEmail,
+        name: userStore.user.name || mainEmail.split('@')[0]
+      }, ...list];
+    }
+  }
+  return list.length > 0 ? list : [{
+    accountId: userStore.user?.account?.accountId || 0,
+    email: userStore.user?.email || '',
+    name: userStore.user?.name || ''
+  }];
+});
+const accountOptions = computed(() => senderAccounts.value.map(account => ({
+  ...account,
+  disabled: !isMailboxDomainEnabled(account.email, userStore.user?.domainList, settingStore.settings?.domainList),
+})))
+const senderDomainDisabled = computed(() => !isMailboxDomainEnabled(form.sendEmail, userStore.user?.domainList, settingStore.settings?.domainList))
+
+function onSendAccountChange(val) {
+  const selected = accountOptions.value.find(item => item.accountId === val);
+  if (selected) {
+    form.accountId = selected.accountId;
+    form.sendEmail = selected.email;
+    form.name = selected.name;
+    isDraftAccountInvalid.value = false;
+  }
+}
+const contactsTabRef = ref({})
+const showContacts = ref(false)
+const showCcBcc = ref(false)
+const mySelect = ref()
+let selectStatus = false
+const backReply = reactive({
+  receiveEmail: [],
+  cc: [],
+  bcc: [],
+  subject: '',
+  content: '',
+  sendType: ''
+})
+const form = reactive({
+  sendEmail: '',
+  receiveEmail: [],
+  cc: [],
+  bcc: [],
+  accountId: -1,
+  name: '',
+  subject: '',
+  content: '',
+  sendType: '',
+  text: '',
+  emailId: 0,
+  attachments: [],
+  draftId: null,
+  createTime: null,
+  requestId: '',
+  requestHash: '',
+})
+
+const selectRecipientList = ref([])
+
+function openContacts() {
+  contactStore.fetchContacts();
+  showContacts.value = true;
+}
+
+function onContactsSelected(selectedEmails) {
+  selectedEmails.forEach(email => {
+    if (!form.receiveEmail.includes(email)) {
+      form.receiveEmail.push(email);
+    }
+  });
+}
+
+function onDeleteRecentRecipient(email) {
+  writerStore.sendRecipientRecord = writerStore.sendRecipientRecord.filter(item => item !== email);
+  ElMessage.success(t('recordDeletedMsg'));
+}
+
+function onClearRecentRecipients() {
+  writerStore.sendRecipientRecord = [];
+  ElMessage.success(t('recentClearedMsg'));
+}
+
+function selectChange(value) {
+  form.receiveEmail.push(value)
+}
+
+function selectStatusChange(status) {
+  selectStatus = status
+}
+
+const openSelect = () => {
+  mySelect.value?.toggleMenu()
+}
+
+function inputChange(value) {
+  if (!value) {
+    selectRecipientList.value = [];
+    if (selectStatus) openSelect();
+    return;
+  }
+
+  const kw = value.toLowerCase();
+  const matchedContacts = (contactStore.contacts || [])
+    .filter(c => !form.receiveEmail.includes(c.email) && (
+      (c.email && c.email.toLowerCase().includes(kw)) ||
+      (c.name && c.name.toLowerCase().includes(kw))
+    ))
+    .map(c => c.email);
+
+  const matchedRecent = (writerStore.sendRecipientRecord || [])
+    .filter(item => !form.receiveEmail.includes(item) && item.toLowerCase().includes(kw));
+
+  selectRecipientList.value = Array.from(new Set([...matchedContacts, ...matchedRecent])).slice(0, 10);
+
+  if (!selectStatus && selectRecipientList.value.length > 0) {
+    openSelect()
+  }
+
+  if (selectStatus && selectRecipientList.value.length === 0) {
+    openSelect()
+  }
+}
+
+function addTagChange(val) {
+  const emails = Array.from(new Set(
+      val.split(/[,，;；]/).map(item => item.trim()).filter(item => item)
+  ));
+
+  form.receiveEmail.splice(form.receiveEmail.length - 1, 1)
+
+  let has = false
+  emails.forEach(email => {
+    if (isEmail(email) && !form.receiveEmail.includes(email)) {
+      form.receiveEmail.push(email)
+      has = true
+    }
+  })
+  if (selectStatus && has) openSelect()
+}
+
+function addSecondaryTag(field, value) {
+  form[field].splice(form[field].length - 1, 1)
+  const addresses = String(value || '').split(/[,，;；]/).map(item => item.trim()).filter(Boolean)
+  for (const address of addresses) {
+    // Preserve invalid input so send validation can explain it instead of
+    // silently dropping an intended recipient.
+    if (!form[field].some(existing => existing.toLowerCase() === address.toLowerCase())) form[field].push(address)
+  }
+}
+
+function clearContent() {
+  ElMessageBox.confirm(t('clearContentConfirm'), {
+    confirmButtonText: t('confirm'),
+    cancelButtonText: t('cancel'),
+    type: 'warning'
+  }).then(() => {
+    resetForm()
+  }).catch(() => {})
+}
+
+function delAtt(index) {
+  form.attachments.splice(index, 1);
+}
+
+function chooseFile() {
+  const doc = document.createElement("input")
+  doc.setAttribute("type", "file")
+  doc.multiple = true;
+  doc.click()
+  doc.onchange = async (e) => {
+    const fileList = e.target.files;
+    for (const file of fileList) {
+      const size = file.size
+      const filename = file.name
+      const contentType = file.type
+      const content = await fileToBase64(file)
+      form.attachments.push({content, filename, size, contentType})
+    }
+  }
+}
+
+async function sendEmail() {
+  if (senderDomainDisabled.value) {
+    ElMessage({ message: t('domainManagement.senderDisabled'), type: 'warning', plain: true })
+    return
+  }
+  if (form.receiveEmail.length === 0) {
+    ElMessage({
+      message: t('emptyRecipientMsg'),
+      type: 'error',
+      plain: true,
+    })
+    return
+  }
+  const recipients = [...form.receiveEmail, ...form.cc, ...form.bcc]
+  if (recipients.some(address => typeof address !== 'string' || address.length > 254 || !isEmail(address))) {
+    ElMessage.error(t('mailRecipients.invalidRecipient'))
+    return
+  }
+  if (new Set(recipients.map(address => address.trim().toLowerCase())).size > 20) {
+    ElMessage.error(t('mailRecipients.recipientLimit'))
+    return
+  }
+
+  if (!form.subject) {
+    ElMessage({
+      message: t('emptySubjectMsg'),
+      type: 'error',
+      plain: true,
+    })
+    return
+  }
+
+  syncEditorState()
+
+  if (!form.content) {
+    ElMessage({
+      message: t('emptyContentMsg'),
+      type: 'error',
+      plain: true,
+    })
+    return
+  }
+
+  if (!sendActivity.tryBeginPersistence()) {
+    ElMessage({
+      message: t('sendingErrorMsg'),
+      type: 'error',
+      plain: true,
+    })
+    return
+  }
+
+  const requestBytes = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(JSON.stringify({
+    ...composeRecipientSnapshot(form), accountId: form.accountId, subject: form.subject,
+    text: form.text, content: form.content, attachments: form.attachments, sendType: form.sendType, emailId: form.emailId,
+  })))
+  const requestHash = Array.from(new Uint8Array(requestBytes)).map(value => value.toString(16).padStart(2, '0')).join('')
+  if (!form.requestId || form.requestHash !== requestHash) {
+    form.requestId = crypto.randomUUID()
+  }
+  form.requestHash = requestHash
+
+  // Persist a recoverable snapshot before starting the undo countdown. A page
+  // exit may cancel ordinary HTTP requests, but it must not destroy the draft.
+  let formCopy = {
+    sendEmail: form.sendEmail,
+    receiveEmail: [...form.receiveEmail],
+    cc: [...form.cc],
+    bcc: [...form.bcc],
+    accountId: form.accountId,
+    name: form.name,
+    subject: form.subject,
+    content: form.content,
+    sendType: form.sendType,
+    text: form.text,
+    emailId: form.emailId,
+    attachments: form.attachments ? form.attachments.map(att => ({ ...att })) : [],
+    draftId: form.draftId,
+    requestId: form.requestId,
+    requestHash: form.requestHash,
+    userId: userStore.user.userId,
+  }
+
+  const sendDatabase = db.value
+  const sendUserId = userStore.user.userId
+
+  try {
+    formCopy = await persistPendingSendDraft(sendDatabase, formCopy, {
+      userId: sendUserId,
+    })
+    requireDraftDatabaseOwner(sendDatabase, userStore.user.userId)
+    if (sendDatabase !== db.value) throw new Error('Draft account changed')
+    form.draftId = formCopy.draftId
+    draftStore.refreshList++
+  } catch (error) {
+    sendActivity.endPersistence()
+    console.error('Pending send draft save failed:', error)
+    ElMessage.error(t('saveFailedMsg'))
+    return
+  }
+
+  // Hide the compose window only after recovery data is durable.
+  show.value = false
+  isMinimized.value = false
+
+  undoCountdown.value = 5
+
+  const timer = setTimeout(() => {
+    commitSend()
+  }, 5000)
+
+  const interval = setInterval(() => {
+    if (undoCountdown.value > 1) {
+      undoCountdown.value--
+    } else {
+      clearInterval(interval)
+    }
+  }, 1000)
+
+  const notificationInstance = ElNotification({
+    message: () => h('div', { class: 'undo-send-notification-inner' }, [
+      h('span', { class: 'undo-send-text' }, t('sendingInSeconds', { seconds: undoCountdown.value })),
+      h('button', {
+        type: 'button',
+        class: 'undo-send-btn',
+        onClick: (e) => {
+          e.stopPropagation()
+          undoSend()
+        }
+      }, t('undoSend'))
+    ]),
+    position: 'bottom-right',
+    duration: 5200,
+    showClose: false,
+    customClass: 'undo-send-notification'
+  })
+
+  pendingSend = {
+    data: formCopy,
+    database: sendDatabase,
+    userId: sendUserId,
+    timer,
+    interval,
+    notificationInstance
+  }
+  sendActivity.endPersistence()
+}
+
+function commitSend() {
+  if (!pendingSend) return
+  const { data, database, userId, timer, interval, notificationInstance } = pendingSend
+  pendingSend = null
+  if (timer) clearTimeout(timer)
+  if (interval) clearInterval(interval)
+  if (notificationInstance && typeof notificationInstance.close === 'function') {
+    notificationInstance.close()
+  }
+  if (database !== db.value || normalizeDraftUserId(userId) !== normalizeDraftUserId(userStore.user.userId)) return
+  executeSend(data, {database, userId})
+}
+
+function flushPendingSend() {
+  if (!pendingSend) return
+  commitSend()
+}
+
+function undoSend() {
+  if (!pendingSend) return
+  const { data, database, userId, timer, interval, notificationInstance } = pendingSend
+  pendingSend = null
+  if (timer) clearTimeout(timer)
+  if (interval) clearInterval(interval)
+  if (notificationInstance && typeof notificationInstance.close === 'function') {
+    notificationInstance.close()
+  }
+  if (database !== db.value || normalizeDraftUserId(userId) !== normalizeDraftUserId(userStore.user.userId)) return
+
+  try { requireDraftDatabaseOwner(database, userId) } catch { return }
+
+  // Restore form
+  Object.assign(form, data)
+  form.attachments = data.attachments ? [...data.attachments.map(a => ({ ...a }))] : []
+  Object.assign(form, composeRecipientSnapshot(data))
+  showCcBcc.value = form.cc.length > 0 || form.bcc.length > 0
+
+  show.value = true
+  isMinimized.value = false
+  const loadToken = composeLoad.begin()
+  const restoredContent = data.content || ''
+  replaceEditorContent(restoredContent, loadToken).then(loaded => {
+    if (loaded) editor.value?.focus?.()
+  })
+
+  ElMessage({
+    message: t('sendCancelledMsg'),
+    type: 'info',
+    plain: true
+  })
+}
+
+function executeSend(sendForm, {database, userId}) {
+  const isCurrentAccount = () => {
+    if (database !== db.value || normalizeDraftUserId(userId) !== normalizeDraftUserId(userStore.user.userId)) return false
+    try { requireDraftDatabaseOwner(database, userId); return true } catch { return false }
+  }
+  if (!isCurrentAccount()) return
+  percentMessage = ElMessage({
+    message: () => h(sendPercent, {value: percent.value, desc: t('sending')}),
+    dangerouslyUseHTMLString: true,
+    plain: true,
+    duration: 0,
+    customClass: 'message-bottom'
+  })
+
+  sending = true
+
+  emailSend(sendForm, (e) => {
+    percent.value = Math.round((e.loaded * 98) / e.total)
+  }).then(async emailList => {
+    try {
+      await clearPendingSendDraft(database, sendForm.draftId, userId)
+      if (isCurrentAccount()) draftStore.refreshList++
+    } catch (error) {
+      // Delivery was accepted. A closed old account handle leaves its recovery
+      // copy intact instead of clearing a later account's same numeric draft ID.
+      console.error('Sent draft cleanup failed:', error)
+    }
+    if (!isCurrentAccount()) return
+    const email = emailList[0]
+    emailList.forEach(item => {
+      emailStore.sendScroll?.addItem(item)
+    })
+    emailStore.conversationRevision++
+
+    ElNotification({ ...sendFeedback(email, t), position: 'bottom-right' })
+
+    userStore.refreshUserInfo();
+    addRecipientRecord(sendForm.receiveEmail);
+
+    show.value = false
+    isMinimized.value = false
+    resetForm();
+  }).catch((e) => {
+    if (!isCurrentAccount()) return
+    ElNotification({
+      title: t('sendFailMsg'),
+      type: e.code === 403 ? 'warning' : 'error',
+      message: h('span', {style: 'color: teal'}, e.message),
+      position: 'bottom-right'
+    })
+    if (e.code === 401) {
+      router.replace('/login');
+    }
+    // Restore form on failure
+    Object.assign(form, sendForm);
+    form.attachments = sendForm.attachments ? [...sendForm.attachments.map(a => ({ ...a }))] : [];
+    Object.assign(form, composeRecipientSnapshot(sendForm));
+    showCcBcc.value = form.cc.length > 0 || form.bcc.length > 0;
+    const loadToken = composeLoad.begin();
+    const restoredContent = sendForm.content || '';
+    replaceEditorContent(restoredContent, loadToken);
+    show.value = true
+    addRecipientRecord(sendForm.receiveEmail);
+  }).finally(() => {
+    percentMessage?.close()
+    percent.value = 0
+    sending = false
+  })
+}
+
+function addRecipientRecord(emails = form.receiveEmail) {
+  const targetEmails = Array.isArray(emails) ? emails : [];
+  writerStore.sendRecipientRecord = writerStore.sendRecipientRecord.filter(
+      email => !targetEmails.includes(email)
+  );
+
+  writerStore.sendRecipientRecord.unshift(...targetEmails);
+  writerStore.sendRecipientRecord = writerStore.sendRecipientRecord.slice(0, 500);
+}
+
+function resetForm() {
+  composeLoad.begin()
+  form.userId = userStore.user.userId
+  form.receiveEmail = []
+  form.cc = []
+  form.bcc = []
+  showCcBcc.value = false
+  form.subject = ''
+  form.content = ''
+  form.manyType = null
+  form.attachments = []
+  form.sendType = ''
+  form.emailId = 0
+  form.draftId = null
+  form.createTime = null
+  form.requestId = ''
+  form.requestHash = ''
+  backReply.content = ''
+  backReply.subject = ''
+  backReply.receiveEmail = []
+  backReply.cc = []
+  backReply.bcc = []
+  backReply.sendType = ''
+  defValue.value = ''
+  editor.value?.clearEditor?.()
+}
+
+function syncEditorState() {
+  const snapshot = editorSnapshot(editor.value, form)
+  form.content = snapshot.content
+  form.text = snapshot.text
+}
+
+async function replaceEditorContent(content, loadToken) {
+  defValue.value = ''
+  editor.value?.clearEditor?.()
+  await nextTick()
+  if (!composeLoad.isCurrent(loadToken)) return false
+  defValue.value = content || ''
+  form.content = content || ''
+  await nextTick()
+  if (!composeLoad.isCurrent(loadToken)) return false
+  syncEditorState()
+  return true
+}
+
+function change(content, text) {
+  composeLoad.begin()
+  form.content = content;
+  form.text = text
+}
+
+function focusChange() {
+  if (selectStatus) openSelect()
+}
+
+function normalizeForwardSubject(subject) {
+  if (!subject) return 'Fwd: ';
+  const cleaned = subject.replace(/^((re|fwd|fw|回复|转发)\s*[:：]\s*)+/gi, '').trim();
+  return `Fwd: ${cleaned}`;
+}
+
+async function openReply(email, all = false) {
+  if (!canOpenComposer()) return;
+  resetForm();
+  const loadToken = composeLoad.begin();
+  form.sendType = 'reply';
+  form.emailId = email.emailId;
+  let reply;
+  try {
+    reply = all ? await loadReplyAllContext(email, accountOptions.value, {
+      owner: userStore.user.userId,
+      currentOwner: () => userStore.user.userId,
+      isCurrent: () => composeLoad.isCurrent(loadToken),
+      loadIdentities: mailIdentities,
+    }) : replyContext(email, accountOptions.value);
+  } catch (error) {
+    if (composeLoad.isCurrent(loadToken)) ElMessage.error(error?.message || t('requestFailedMsg'));
+    return;
+  }
+  if (!reply || !composeLoad.isCurrent(loadToken)) return;
+  const matchedTarget = reply.account;
+  if (matchedTarget) {
+    form.accountId = matchedTarget.accountId;
+    form.sendEmail = matchedTarget.email;
+    form.name = matchedTarget.name;
+  }
+
+  form.receiveEmail = reply.recipients;
+  form.cc = reply.cc || [];
+  form.bcc = [];
+  showCcBcc.value = form.cc.length > 0;
+
+  const rawSubject = (email.subject || '').replace(/{{code}}/g, email.code || '');
+  form.subject = normalizeReplySubject(rawSubject);
+
+  open(matchedTarget, loadToken);
+  if (!await replaceEditorContent(quotedEmailHtml(email), loadToken)) return;
+  backReply.content = form.content;
+  backReply.subject = form.subject;
+  backReply.receiveEmail = [...form.receiveEmail];
+  backReply.cc = [...form.cc];
+  backReply.bcc = [...form.bcc];
+  backReply.sendType = form.sendType;
+}
+
+function openReplyAll(email) {
+  return openReply(email, true)
+}
+
+async function openForward(email) {
+  if (!canOpenComposer()) return;
+  resetForm();
+  const loadToken = composeLoad.begin();
+  form.sendType = 'forward';
+  form.emailId = email.emailId;
+  const forwardAccount = findComposeAccount(accountOptions.value, { email: email.toEmail });
+  const matchedTarget = forwardAccount || accountOptions.value[0];
+  if (matchedTarget) {
+    form.accountId = matchedTarget.accountId;
+    form.sendEmail = matchedTarget.email;
+    form.name = matchedTarget.name;
+  }
+
+  const rawSubject = (email.subject || '').replace(/{{code}}/g, email.code || '');
+  form.subject = normalizeForwardSubject(rawSubject);
+
+  open(matchedTarget, loadToken);
+  if (!await replaceEditorContent(quotedEmailHtml(email), loadToken)) return;
+  backReply.content = form.content;
+  backReply.subject = form.subject;
+  backReply.receiveEmail = [...form.receiveEmail];
+  backReply.sendType = form.sendType;
+}
+
+function formatImage(content) {
+  content = content || '';
+  return content.replace(/{{domain}}/g, '/api/attachment/');
+}
+
+function quotedEmailHtml(email) {
+  return buildQuotedEmailHtml({
+    dateText: formatDetailDate(email.createTime),
+    name: email.name,
+    email: email.sendEmail,
+    wroteText: t('wrote'),
+    contentHtml: formatImage(email.content),
+    text: email.text,
+  }, html => sanitizeEmailHtml(html, {
+    allowRemoteImages: false,
+    isDark: !!uiStore.dark,
+  }).html)
+}
+
+async function open(targetAccountOrOptions, loadToken = null) {
+  if (!canOpenComposer()) return false;
+  if (loadToken == null) loadToken = composeLoad.begin();
+  isDraftAccountInvalid.value = false;
+  isMinimized.value = false;
+  let target = targetAccountOrOptions;
+  if (target?.receiveEmail && Array.isArray(target.receiveEmail)) {
+    form.receiveEmail = [...target.receiveEmail];
+    target = target.targetAccount;
+  }
+  if ((!target || !target.email) && !form.draftId && !['reply', 'forward'].includes(form.sendType)) {
+    const owner = userStore.user.userId;
+    let preferred = userStore.user.defaultSendAccount;
+    if (preferred === undefined) {
+      try { preferred = await accountGetDefaultSend(); }
+      catch { preferred = null; }
+      if (owner !== userStore.user.userId || !composeLoad.isCurrent(loadToken) || !canOpenComposer()) return false;
+      if (preferred && Number(preferred.userId) !== Number(owner)) preferred = null;
+      userStore.user.defaultSendAccount = preferred;
+    }
+    if (preferred && Number(preferred.userId) !== Number(owner)) preferred = null;
+    const preferredOption = accountOptions.value.find(account =>
+      String(account.accountId) === String(preferred?.accountId) && !account.disabled);
+    if (preferredOption) target = preferredOption;
+  }
+  if (!target || !target.email) {
+    const available = accountOptions.value.filter(account => !account.disabled);
+    if (accountStore.currentAccount?.email) {
+      target = available.find(acc => acc.email?.toLowerCase() === accountStore.currentAccount.email.toLowerCase()) || available[0] || accountOptions.value[0];
+    } else {
+      target = available[0] || accountOptions.value[0];
+    }
+  }
+  if (target) {
+    form.sendEmail = target.email;
+    form.accountId = target.accountId;
+    form.name = target.name;
+  }
+  show.value = true;
+  nextTick(() => {
+    editor.value?.focus?.();
+  });
+  return true;
+}
+
+async function openDraft(draft) {
+  if (!canOpenComposer()) return;
+  const database = db.value;
+  if (normalizeDraftUserId(draft.userId) !== normalizeDraftUserId(database.userId)) return;
+  const ownedDraft = await database.draft.get(draft.draftId);
+  if (!ownedDraft || database !== db.value) return;
+  const attachment = await database.att.get(draft.draftId);
+  if (database !== db.value || !canOpenComposer()) return;
+  draft = {...ownedDraft, attachments: attachment?.attachments || []};
+  resetForm();
+  const loadToken = composeLoad.begin();
+  Object.assign(form, { ...draft });
+  Object.assign(form, composeRecipientSnapshot(draft));
+  showCcBcc.value = form.cc.length > 0 || form.bcc.length > 0;
+  form.attachments = (draft.attachments || []).map(attachment => ({ ...attachment }));
+
+  const matched = findComposeAccount(accountOptions.value, {
+    accountId: draft.sendAccountId ?? draft.accountId,
+    email: draft.sendEmail,
+  });
+  if (matched) {
+    form.accountId = matched.accountId;
+    form.sendEmail = matched.email;
+    form.name = matched.name;
+    isDraftAccountInvalid.value = false;
+  } else {
+    isDraftAccountInvalid.value = true;
+  }
+  show.value = true;
+  isMinimized.value = false;
+  if (!await replaceEditorContent(form.content, loadToken)) return;
+  editor.value?.focus?.();
+}
+
+const handleKeyDown = (event) => {
+  if (event.key === 'Escape' && show.value && !isMinimized.value) {
+    close()
+  }
+  if ((event.ctrlKey || event.metaKey) && event.key === 'Enter' && show.value && !isMinimized.value) {
+    event.preventDefault();
+    sendEmail();
+  }
+};
+
+function canOpenComposer() {
+  if (!sendActivity.isActive()) return true;
+  ElMessage({
+    message: t('sendingErrorMsg'),
+    type: 'warning',
+    plain: true,
+  });
+  return false;
+}
+
+function handleBeforeUnload(event) {
+  guardPendingSendUnload(event, sendActivity.isActive());
+}
+
+let unregisterRouterGuard = null;
+
+watch(() => db.value, () => {
+  if (pendingSend) {
+    clearTimeout(pendingSend.timer);
+    clearInterval(pendingSend.interval);
+    pendingSend.notificationInstance?.close?.();
+    pendingSend = null;
+  }
+  show.value = false;
+  isMinimized.value = false;
+  showContacts.value = false;
+  resetForm();
+}, {flush: 'sync'});
+
+onMounted(() => {
+  window.addEventListener('keydown', handleKeyDown);
+  window.addEventListener('beforeunload', handleBeforeUnload);
+  unregisterRouterGuard = router.beforeEach((to, from, next) => {
+    if (sendActivity.isActive() && !pendingSend) {
+      ElMessage.warning(t('sendingErrorMsg'));
+      next(false);
+      return;
+    }
+    if (pendingSend) {
+      flushPendingSend();
+    }
+    next();
+  });
+});
+
+onUnmounted(() => {
+  window.removeEventListener('keydown', handleKeyDown);
+  window.removeEventListener('beforeunload', handleBeforeUnload);
+  if (unregisterRouterGuard) {
+    unregisterRouterGuard();
+  }
+});
+
+async function close() {
+  if (sendActivity.isActive()) return;
+  composeLoad.begin()
+  if (selectStatus) openSelect();
+
+  syncEditorState()
+
+  if (form.draftId) {
+    await saveDraft();
+    return;
+  }
+
+  if (!form.subject && !form.content && form.receiveEmail.length === 0 && form.cc.length === 0 && form.bcc.length === 0 && !form.attachments?.length) {
+    show.value = false
+    isMinimized.value = false
+    resetForm()
+    return;
+  }
+
+  if (form.sendType === 'reply' || form.sendType === 'forward') {
+    if (form.content === backReply.content &&
+        form.subject === backReply.subject &&
+        form.receiveEmail.toString() === backReply.receiveEmail.toString() &&
+        form.cc.toString() === backReply.cc.toString() && form.bcc.toString() === backReply.bcc.toString() && !form.attachments?.length
+    ) {
+      show.value = false
+      isMinimized.value = false
+      resetForm()
+      return;
+    }
+  }
+
+  ElMessageBox.confirm(
+      t('saveDraftTip'),
+      {
+        confirmButtonText: t('saveDraft'),
+        cancelButtonText: t('dontSaveDraft'),
+        type: 'warning',
+        distinguishCancelAndClose: true,
+      }
+  ).then(() => saveDraft()).catch((action) => {
+    if (action === 'cancel') {
+      show.value = false
+      isMinimized.value = false
+      resetForm()
+    }
+  })
+}
+
+async function saveDraft() {
+  if (!sendActivity.tryBeginPersistence()) return;
+  savingDraft.value = true;
+  const database = db.value;
+  const owner = userStore.user.userId;
+  try {
+    syncEditorState();
+    const saved = await persistPendingSendDraft(database, {
+      ...toRaw(form),
+      sendAccountId: form.accountId,
+      receiveEmail: [...form.receiveEmail],
+      cc: [...form.cc],
+      bcc: [...form.bcc],
+      attachments: form.attachments?.map(att => ({ ...att })) || [],
+    }, { userId: owner });
+    if (database !== db.value) return;
+    form.draftId = saved.draftId;
+    draftStore.refreshList++;
+    show.value = false;
+    isMinimized.value = false;
+    resetForm();
+    ElMessage.success(t('draftSavedMsg'));
+  } catch (error) {
+    console.error('Draft save failed:', error);
+    ElMessage.error(t('saveFailedMsg'));
+  } finally {
+    savingDraft.value = false;
+    sendActivity.endPersistence();
+  }
+}
+</script>
+
+<style>
+.write-select .el-select-dropdown__list {
+  padding: 4px 4px !important;
+}
+.write-select .el-select-dropdown__item {
+  padding: 0 10px 0 10px;
+}
+.write-select .el-select-dropdown {
+  min-width: 0 !important;
+}
+</style>
+
+<style scoped lang="scss">
+@use './write.scss';
+
+:global(.undo-send-notification) {
+  border-radius: 12px !important;
+  padding: 12px 16px !important;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.15) !important;
+  background: var(--surface) !important;
+  border: 1px solid var(--line) !important;
+}
+
+:global(.undo-send-notification-inner) {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  width: 100%;
+}
+
+:global(.undo-send-text) {
+  font-size: 13.5px;
+  color: var(--text-strong);
+  font-weight: 500;
+}
+
+:global(.undo-send-btn) {
+  border: none;
+  background: color-mix(in srgb, var(--accent) 15%, transparent);
+  color: var(--accent);
+  font-weight: 600;
+  font-size: 13px;
+  padding: 4px 12px;
+  border-radius: 8px;
+  cursor: pointer;
+  outline: none;
+  white-space: nowrap;
+  transition: background-color var(--duration-fast, 150ms) ease, color var(--duration-fast, 150ms) ease;
+
+  &:hover {
+    background: color-mix(in srgb, var(--accent) 26%, transparent);
+  }
+
+  &:active {
+    background: color-mix(in srgb, var(--accent) 36%, transparent);
+  }
+}
+
+.bcc-privacy-hint {
+  margin: 0;
+  padding: 4px 20px;
+  color: var(--muted);
+  font-size: 12px;
+}
+</style>

@@ -1,0 +1,60 @@
+import app from '../hono/hono';
+import emailService from '../service/email-service';
+import result from '../model/result';
+import userContext from '../security/user-context';
+import securityService from '../service/security-service';
+import { readSendBody } from './send-body';
+
+app.get('/email/list', async (c) => {
+	await securityService.rateLimit(c, 'EMAIL_RATE_LIMITER', 'email-list', 60);
+	const data = await emailService.list(c, c.req.query(), userContext.getUserId(c));
+	return c.json(result.ok(data));
+});
+
+app.get('/email/latest', async (c) => {
+	await securityService.rateLimit(c, 'EMAIL_RATE_LIMITER', 'email-latest', 60);
+	const list = await emailService.latest(c, c.req.query(), userContext.getUserId(c));
+	return c.json(result.ok(list));
+});
+
+app.delete('/email/delete', async (c) => {
+	await securityService.rateLimit(c, 'EMAIL_RATE_LIMITER', 'email-delete', 30);
+	await emailService.delete(c, c.req.query(), userContext.getUserId(c));
+	return c.json(result.ok());
+});
+
+app.post('/email/send', async (c) => {
+	await securityService.rateLimit(c, 'SEND_RATE_LIMITER', 'email-send', 10);
+	const email = await emailService.send(c, await readSendBody(c), userContext.getUserId(c));
+	return c.json(result.ok(email));
+});
+
+app.put('/email/read', async (c) => {
+	await securityService.rateLimit(c, 'EMAIL_RATE_LIMITER', 'email-read', 30);
+	await emailService.read(c, await c.req.json(), userContext.getUserId(c));
+	return c.json(result.ok());
+});
+
+app.put('/email/unread', async (c) => {
+	await securityService.rateLimit(c, 'EMAIL_RATE_LIMITER', 'email-unread', 30);
+	await emailService.setUnread(c, await c.req.json(), userContext.getUserId(c));
+	return c.json(result.ok());
+});
+
+app.get('/email/conversation', async (c) => {
+	await securityService.rateLimit(c, 'EMAIL_RATE_LIMITER', 'email-conversation', 60);
+	const data = await emailService.conversation(c, c.req.query(), userContext.getUserId(c));
+	return c.json(result.ok(data));
+});
+
+app.put('/email/conversation/read', async (c) => {
+	await securityService.rateLimit(c, 'EMAIL_RATE_LIMITER', 'email-conversation-read', 30);
+	const body = await c.req.json();
+	return c.json(result.ok(await emailService.readConversation(c, body.emailId, body.readThroughEmailId, userContext.getUserId(c))));
+});
+
+app.put('/email/conversation/state', async (c) => {
+	await securityService.rateLimit(c, 'EMAIL_RATE_LIMITER', 'email-conversation-state', 30);
+	return c.json(result.ok(await emailService.conversationState(c, await c.req.json(), userContext.getUserId(c))));
+});
+

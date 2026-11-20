@@ -1,0 +1,232 @@
+# Changelog
+
+## Unreleased
+
+## v1.1.2 — 2026-10-20
+
+本节覆盖 v1.1.1 之后的域名管理、邮件生命周期、备份工具及文档界面改进。
+
+Changes since v1.1.1 cover domain management, mail lifecycle, backup tools and documentation improvements.
+
+### 新增与改进 / Added and improved
+
+- 邮箱域名支持修改、停用/重新启用、无关联时删除及整域邮箱迁移。操作前预览影响和冲突；迁移保留前缀、用户与邮箱身份、历史邮件和附件，目标地址占用时整次阻止，不自动合并。停用后停止新增地址与收发，仍可登录阅读历史。
+- Manage mail domains through renaming, disable/enable, deletion of unreferenced domains and whole-domain migration. Preview impacts and conflicts first. Migration preserves prefixes, user/mailbox identity, history and attachments; occupied target addresses block the entire operation without merging. Disabled domains stop new addresses and mail flow while retaining sign-in and history.
+- 新增30天回收站、恢复与彻底删除；已删除别名可单独恢复，保留邮箱身份和历史，并检查域名、归属和配额。可选择新邮件的默认发件地址。
+- Added 30-day Trash with restore and permanent deletion. Deleted aliases can be restored individually while preserving identity and history, subject to domain, ownership and quota checks. Choose a default sender for new messages.
+- Web与CLI支持To/Cc/Bcc和回复全部，保留草稿收件角色并校验总收件人。纯站内邮件直接投递；含任一站外收件人时整封由发信服务处理，保留公开To/Cc，避免重复投递，接收方看不到密送名单。
+- Web and CLI support To/Cc/Bcc and Reply all, retain recipient roles in drafts and validate combined recipients. Purely internal mail uses direct delivery. Messages with any external recipient use the sending provider for the entire envelope, preserving public To/Cc without duplicate delivery or exposing Bcc to recipients.
+- 管理员可执行DNS检查和显式收发测试，分别判断配置、服务商接受及真实收发结果。Resend签名投递回传记录逐收件人事件，处理重复与乱序；发件详情可查看，Cloudflare没有同类回传时明确显示未验证。网页补齐清除Resend Key入口。
+- Administrators can inspect DNS and run explicit send/receive tests, distinguishing configuration, provider acceptance and actual delivery. Signed Resend callbacks record per-recipient events with duplicate and ordering safeguards, visible in sent-mail details. Cloudflare channels without equivalent callbacks remain unverified. The Web UI also supports clearing a Resend key.
+- 新增本地完整实例备份、校验、空实例恢复及KV/R2对象迁移工具。备份覆盖D1、持久KV和必要对象，校验摘要及引用；迁移保留源对象，验证目标后再安排切换。联系人往来支持继续加载更早历史。
+- Added local full-instance backup, verification, empty-instance restore and KV/R2 object migration tools. Backups cover D1, persistent KV and required objects with checksum/reference verification. Migration retains source objects and verifies targets before a planned cutover. Contact history can load earlier correspondence.
+- 文档新增搜索、章节目录定位和提示框，改进中英、深浅色与手机阅读；补齐收信排查及已有部署仓库的具体更新步骤。
+- Documentation adds search, section navigation and callouts, with improved bilingual, light/dark and mobile reading. Receiving troubleshooting and concrete update steps for existing deployment repositories are expanded.
+
+### 修复 / Fixes
+
+- 修复纯站内收件未触发已配置的自动转发。转发使用收件方发信通道及额度，以收件邮箱发信并将Reply-To设为原发件人，保留正文和附件、不带出Bcc；失败保留站内原信并显示提示，不要求原发件人重发。
+- Fixed configured automatic forwarding for purely internal mail. Forwarding uses the recipient's sending channel and quota, sends from their mailbox with Reply-To set to the original sender, preserves body and attachments, and omits Bcc. Failures retain the internal message with a visible notice, without asking the sender to resend.
+- 邮件Webhook恢复本地图标并分开配置、维护与投递记录；管理员DNS、真实收发与投递回传分卡，加载失败归属各自设置，改善窄屏操作。
+- Restored local icons and separated mailbox webhook configuration, maintenance and delivery records. Administrator DNS, live mail tests and delivery callbacks use separate cards with correctly scoped errors and improved narrow-screen controls.
+
+### 升级与限制 / Upgrade and limitations
+
+- 已有实例先备份，更新原仓库并保留现有Worker、D1/KV/R2、私有配置和Secret；不要再次点部署按钮创建替代实例。部署后由管理员在「系统设置 → 系统维护」应用数据库补丁至 **329**。域名新动作需328，回收站和新增发送/投递保护需329；旧已删邮件从升级时起给予30天保留期。
+- Back up existing instances, update their original repository, and preserve the Worker, D1/KV/R2, private configuration and secrets. Do not use the deploy button again to create a replacement. After deployment, an administrator must apply database patches through **329** under System settings → Maintenance. Domain actions require 328; Trash and new send/delivery safeguards require 329. Previously deleted messages receive a fresh 30-day grace period at upgrade.
+- 在实例实际使用的Wrangler配置中保留每日Cron并加入`* * * * *`，以便及时重试通知和分批清理过期邮件；仅更新仓库里的公共模板不会更新私有构建配置。数据库补丁不会随代码部署自动执行。
+- Retain the daily Cron and add `* * * * *` in the instance's effective Wrangler configuration for timely notification retries and bounded expired-mail cleanup. Updating only the public template does not update private build configuration. Deploying code does not automatically apply database patches.
+- 主邮箱迁移后使用新地址和原密码重新登录，并重新生成CLI Token。代码回退不会还原已迁移地址，旧代码不执行域名停用保护；不要依赖回退恢复已永久删除的邮件。
+- After primary-address migration, sign in with the new address and original password and regenerate CLI tokens. Code rollback does not reverse address migration, and older code does not enforce disabled domains. Rollback cannot recover permanently deleted messages.
+- 完整备份和对象迁移需要实例停写；恢复仅支持新的空资源，并撤销旧会话/CLI与未兑换授权、取消待重试通知及清除Resend回传密钥。秘密和浏览器草稿另行保管。真实IPv6回调与助手唤醒仍待接收端联调。
+- Full backup and object migration require offline writers. Restore accepts only new empty resources, revokes old sessions/CLI and unredeemed grants, cancels pending notifications, and clears the Resend callback secret. Protect Worker secrets and browser drafts separately. Real IPv6 callbacks and assistant wake-up still require receiver-side integration testing.
+
+## v1.1.1 — 2026-10-13
+
+本节包含 v1.1.0 之后的安全加固、邮件 Webhook、CLI 改进与双语文档优化。
+
+Changes since v1.1.0 include security hardening, mail webhooks, CLI improvements and bilingual documentation.
+
+### 新增与改进 / Added and improved
+
+- 收件 Webhook：按自己的收件邮箱配置，在外部来信和站内投递保存完成后通知接收端。网页与 CLI 共同管理启停、删除、密钥轮换、测试、投递记录和失败重试；可选择通知全部发件人或地址白名单。
+- Incoming webhooks: Configure each of your mailboxes to notify a receiver after external or internal mail is saved. The Web and CLI share enable/disable, deletion, secret rotation, tests, delivery records and retries, with a choice of all senders or an address allowlist.
+- 回调仅发送事件 ID、邮件 ID 和收件邮箱，通过独立共享密钥验证。通知有限重试，失败不影响收信；接收端按事件 ID 去重、自行排队处理，正文仍使用个人 CLI Token 获取。
+- Callbacks carry only the event ID, mail ID and mailbox, authenticated with a separate shared secret. Bounded retries do not affect mail receipt. Receivers deduplicate by event ID and queue their own work; message bodies remain accessible through the personal CLI token.
+- CLI 列表新增未读过滤与 afterId 增量查询，搜索覆盖主题、地址、文本及 HTML 源文；详情新增可读 body 和正文来源 bodySource，保留原纯文本 text，改善纯 HTML 邮件读取。
+- CLI lists add unread filters and afterId incremental queries. Search covers subjects, addresses, text and HTML source. Details add a readable body and bodySource while preserving the original text, improving access to HTML-only messages.
+- README 与中英 Docs 按个人域名邮箱重新组织，突出无需 VPS、在线体验、网页部署和助手接入；移除 README 邮箱大截图，新增费用与准备，说明 Cloudflare 免费计划与 Resend 免费额度的组合及使用条件。
+- Reorganized the README and bilingual Docs around a personal domain mailbox: no VPS, direct online experience, Web deployment and assistant access. Removed the large README mailbox screenshot and added costs and preparation, including the Cloudflare free-plan and Resend free-allowance combination and its conditions.
+- 中文 README 增加英文简介，公开入口统一为 flaremail.arcinks.com；新增个人邮箱与助手收信的中英场景指南。Pages 为全部公开文档生成可直接阅读的 HTML、规范链接、语言对应链接、分享摘要和站点地图；体验邮箱与正式邮箱继续禁止索引。
+- Added an English introduction to the Chinese README and unified public links at flaremail.arcinks.com, with bilingual guides for personal and assistant mailboxes. Pages generates readable initial HTML, canonical and language links, sharing metadata and a sitemap for all public documents; the experience mailbox and real mailbox remain excluded from indexing.
+- 开发与发版规则统一为 dev 累积开发、完整候选审查验证、通过 PR 合入 main，再创建不可变版本标签与正式 Release；明确准备请求、发版执行和平台部署各自的授权边界。
+- Aligned development and release rules around accumulated dev changes, full-candidate review and validation, a pull request into main, and immutable tags with a formal Release. Clarified authorization for preparation, release execution and platform deployment.
+
+### 安全与修复 / Security and fixes
+
+- 凭据撤销：更换 Google 绑定保留发起会话并撤销其他网页会话；解绑撤销个人 CLI Token；改密原子作废尚未兑换的 OAuth 授权码并保护并发发行/兑换。Google 更换绑定保护需要数据库 326 更新。
+- Credential revocation: Replacing a Google link preserves the initiating session and revokes other browser sessions; unlinking revokes the personal CLI token; password changes atomically invalidate unused OAuth codes and guard concurrent issuance/redemption. Google-link replacement protection requires database update 326.
+- 本地草稿按稳定用户 ID 隔离，有归属的旧草稿可恢复迁移，无归属旧草稿隐藏并提供主动认领；会话过期保留草稿，主动退出仅清理当前用户的草稿与附件。
+- Local drafts are isolated by stable user ID. Attributed legacy drafts migrate recoverably; unattributed drafts stay hidden until explicitly claimed. Session expiry preserves drafts, while explicit logout clears only the current user's drafts and attachments.
+- 加固邮件 HTML、摘要、预览和编辑器解析，保持远程图片需明确同意；验证码提取采用线性处理，私有内嵌附件先检查额度并复用重复对象读取。
+- Hardened mail HTML, snippets, previews and editor parsing while retaining explicit consent for remote images. Verification-code extraction uses linear processing; private inline attachments are checked against quotas before reads, and repeated references share object retrieval.
+- 新内容边界：链接最长 8192 字符，超限保留文字并取消点击；单表最多 10000 展开格、单格行/列跨度最多 100，超限保留文本行列分隔；Web/CLI 发送与回复整包最多 32 MiB，流式拒绝超限，现有附件规则不变。
+- New content boundaries: Links allow up to 8192 characters, retaining text without a clickable destination above the limit. Tables allow 10000 expanded cells and cell row/column spans up to 100, retaining text separators above the limit. Web/CLI send and reply bodies allow 32 MiB with streamed rejection; existing attachment rules remain unchanged.
+
+### 升级与兼容性 / Upgrade and compatibility
+
+- 数据库目标版本由 325 升至 **327**：326 补充凭据撤销保护，327 增加 Webhook 数据结构。更新前备份数据库、附件和配置；部署后由管理员在“系统设置 → 系统维护”应用补丁，保留原邮件、成员和存储资源。
+- The target schema advances from 325 to **327**: 326 adds credential-revocation protection, and 327 adds webhook storage. Back up the database, attachments and configuration before updating, then apply patches under System settings → Maintenance while keeping existing mail, members and storage resources.
+- 未配置 Webhook 时不会发送通知，也不补发历史邮件。地址白名单仅匹配 From 邮箱，不代表发件人身份认证；通知次数不等于助手启动次数。配置变更取消旧版本排队事件，已在途请求无法撤回。
+- No webhook notifications are sent without configuration, and historical mail is not replayed. Address allowlists match the From mailbox and do not authenticate sender identity; notification counts do not equal assistant invocations. Configuration changes cancel queued events from older revisions, but cannot recall requests already in flight.
+- CLI 保留原响应封装与 text 字段，新增字段与查询参数可按需采用。现有实例需要升级至 327 才能使用 Webhook；仅回滚代码不会撤销数据库补丁。
+- The CLI retains its response envelope and text field; new fields and query parameters are optional. Existing instances need schema 327 for webhooks. Rolling back code does not undo database patches.
+- 已有定制 Wrangler 配置需保留每日任务并加入每分钟 `* * * * *` Cron，以及时补发失败通知；公开模板已包含该配置。完整升级步骤见中英更新文档。
+- Existing custom Wrangler configurations should retain the daily task and add an every-minute `* * * * *` Cron for timely webhook recovery. Public templates already include it. See the bilingual update guide for the complete upgrade steps.
+
+### 验证与已知限制 / Validation and known limitations
+
+- 安全加固此前通过 Worker 451/451、Web 147/147、正式/Pages 构建及真实编辑器 92/92；16 项修复已完成独立审查。本次完整 1.1.1 候选独立审查通过，覆盖新增链接、表格和发送整包 3 项边界，并独立通过 Worker 59 项、Web 8 项专项验证。
+- Earlier security validation passed Worker 451/451, Web 147/147, production/Pages builds and 92/92 real-editor checks; sixteen fixes completed independent review. Independent review of the complete 1.1.1 candidate passed, including the three new link, table and request-body boundaries, with 59 Worker and 8 Web focused checks independently passing.
+- Webhook 变更通过 Worker 469/469、Web 148/148、部署配置检查、双构建和浏览器验收，独立审查的修复项已关闭。真实 IPv6 回调与助手唤醒仍需接收端联调；发版不自动升级实例数据库，补丁须由管理员应用。
+- Webhook changes passed Worker 469/469, Web 148/148, deployment configuration checks, both builds and browser checks; independent review fixes are closed. Real IPv6 callbacks and assistant wakeups still need receiver integration. A release does not automatically upgrade instance databases; administrators must apply the patches.
+- 双语公开文档与搜索分享变更通过 Web 153/153、正式/Pages 构建、36 篇文档产物检查及浏览器验证；dev Worker 和 Pages 预览部署已回验成功，匿名邮件与 Webhook 配置接口仍要求认证。
+- Bilingual documentation and search/share changes passed 153/153 Web tests, production/Pages builds, checks for 36 document artifacts and browser verification. Dev Worker and Pages preview deployments were verified successfully; anonymous access to mail and webhook configuration still requires authentication.
+
+## v1.1.0 — 2026-09-23
+
+本版本覆盖上一稳定版之后 `main` 到 `dev` 的完整变更；此前仅准备、未发布的 v1.0.4 内容一并纳入 v1.1.0。
+
+This release includes the complete `main`-to-`dev` change range since the previous stable release, including work prepared for v1.0.4 that was never published.
+
+### 新增 / Added
+
+- **会话列表与阅读**：收件箱、已发送和星标列表将同一回复链收纳为一个入口，按会话分页，在发件人后显示邮件数量。存在未读来信时整个入口呈现未读；打开会话会标记其中的来信已读，最新邮件展开，历史往返可按时间查看。
+- **Conversation lists and reading**: Inbox, Sent and Starred group a reply chain into one entry, paginate conversations and show message counts beside senders. An unread incoming message makes the conversation unread; opening it marks incoming messages read, expands the latest message and provides chronological history.
+- **主题与引用**：归组同时检查消息回复关联和主题，兼容重复 `Re:`、中文回复前缀；仅主题相同不会合并，中途改题会另起会话。阅读页统一主题随正文滚动，各封原始主题保留在详情；历史引用默认折叠并限制多级缩进，保留原文。
+- **Subjects and quotes**: Grouping requires reply links and matching subjects, recognizes repeated `Re:` and Chinese reply prefixes, and starts a separate conversation when the subject changes. Matching subjects alone do not merge mail. A shared heading scrolls with the conversation; original subjects remain in message details. Historical quotes collapse with bounded indentation while retaining their content.
+- **草稿与自动刷新**：写信增加“保存草稿”，收件人未填也可保存，正文和附件一起持久化。收件箱默认每 30 秒检查新邮件，隐藏或离线时暂停，返回页面或恢复网络时立即检查；保留当前分页、滚动位置和正在进行的勾选操作。
+- **Drafts and automatic updates**: Compose adds Save draft, including incomplete recipient fields, with body and attachments persisted together. Inbox checks every 30 seconds by default, pauses when hidden or offline, and checks on return or reconnection while preserving paging, scrolling and active selections.
+- **未读与撤销**：列表和阅读页可重新标未读；标已读提供 5 秒撤销，列表批量操作作用于当前文件夹及邮箱筛选内的会话邮件。发送提供 5 秒撤销窗口，倒计时开始前保存恢复草稿，并防止重复开启发送及刷新丢失待处理内容。
+- **Unread and undo**: Lists and message details can mark mail unread. Mark-as-read offers a five-second undo window; list actions affect conversation messages within the current folder and mailbox filter. Sending offers a five-second undo window, saves a recovery draft before the countdown, and guards against concurrent sends and loss of pending content on reload.
+- **Reply-To**：升级数据库后，新收件保存并展示 Reply-To；Web 和 CLI 回复优先使用来信指定的回复地址，回复已发送邮件使用原收件人。
+- **Reply-To**: After the schema upgrade, incoming mail stores and displays Reply-To. Web and CLI replies prefer the sender's designated reply addresses; replying to sent mail targets its original recipients.
+
+### 修复与优化 / Fixed and improved
+
+- 修复草稿/回复切换及编辑器重建时的旧内容覆盖、回复身份和收件人选择、正文同步与附件保存；CLI 纯文本发信和回复正确转义 HTML。
+- Fixed stale content when switching drafts/replies or rebuilding the editor, sender/recipient selection, body synchronization and attachment persistence. CLI plaintext sends and replies now escape HTML correctly.
+- 修复草稿单封删除误用服务器邮件接口、批量删除遗留附件；保存或删除失败保留内容并提示。修复后台刷新期间翻页/手动刷新被忽略，以及结果返回后滚动位置倒退。
+- Fixed draft-row deletion calling the server mail API and batch deletion leaving attachments behind, with visible failure feedback. Fixed foreground paging/refresh being ignored during background updates and scroll position jumping backward afterward.
+- 修复筛选、分页和升序下的新邮件检测游标；后台请求串行调度并丢弃过期范围响应。
+- Corrected new-mail cursors across filters, pages and ascending order; background checks run serially and discard responses for obsolete scopes.
+- 区分投递服务内部 ID 与 RFC Message-ID，保留回复的 In-Reply-To/References 链。Resend 排队期间 Message-ID 暂未生成时最多查询三次、整体最多五秒，不重复发送；已受理但关联元数据缺失时提示已发送及会话关联限制，真实投递不确定仍保留警告。
+- Distinguished provider IDs from RFC Message-ID values and preserved In-Reply-To/References chains. Resend metadata lookups retry at most three times within five seconds while queued, without resending. Accepted mail with missing threading metadata shows sent feedback and a threading limitation; genuine delivery uncertainty still warns.
+- 优化窄屏工具栏、分页、批量选择、星标和复制反馈；邮件详情可复制地址，附件下载显示进度并防重复点击。数据库维护页更清晰地展示当前/目标版本、待升级补丁和升级状态。静态体验页同步会话和草稿行为，中英使用/发信文档同步更新。
+- Improved narrow-screen toolbars, paging, bulk selection, starring and copy feedback. Message details support address copying and attachment download progress with duplicate-click protection. Database maintenance presents current/target versions, pending patches and upgrade status more clearly. The static experience and bilingual usage/sending guides reflect the new workflows.
+
+### 安全与维护 / Security and maintenance
+
+- 入站原始邮件限制为 25 MiB、附件最多 50 件、解码后附件总量最多 18 MiB；超限邮件在业务持久化和转发前拒绝。
+- Incoming raw mail is limited to 25 MiB, 50 attachments and 18 MiB of decoded attachments; oversized messages are rejected before business persistence or forwarding.
+- 登录、安装验证/升级与 OAuth Token 请求体使用 16 KiB 流式上限，完整安装使用 64 KiB；覆盖缺失或虚假的 Content-Length 及分块请求。
+- Login, setup verification/upgrade and OAuth token bodies use streamed 16 KiB limits; full setup uses 64 KiB, including missing/misleading Content-Length and chunked bodies.
+- 回复/转发引用重新净化 HTML、转义元数据并默认阻断远程图片；当前用户的本地草稿和附件仅在显式退出登录时清理，刷新、401 或自然过期继续保留。
+- Reply/forward quotes are sanitized, metadata is escaped and remote images are blocked by default. Browser-local drafts and attachments are cleared only on explicit logout, surviving refreshes, 401 responses and natural session expiry.
+- 成员权限统一由服务端一处定义；已兑换 OAuth 授权码在保持不可重放的前提下保留 30 天审计窗口。完善权限回归测试、遗留表说明及 `dev` → 验证批准 → `main`/标签/Release 发布流程。
+- Member permissions use one server-side definition. Redeemed OAuth codes remain non-replayable while retained for a 30-day audit window. Permission regression tests, legacy-table documentation and the `dev` → validated approval → `main`/tag/Release process were strengthened.
+
+### 升级、兼容性与限制 / Upgrade, compatibility and limitations
+
+- 数据库目标版本从 **324 升至 325**，新增 `email.reply_to`。部署前备份 D1 与附件对象；部署后管理员在“系统设置 → 系统维护”执行数据库更新。旧 schema 继续兼容基本收发，但历史未保存的 Reply-To 无法自动恢复。
+- The target schema advances from **324 to 325**, adding `email.reply_to`. Back up D1 and attachment objects before deployment; afterward, apply the database update under System settings → Maintenance. Basic mail operations remain compatible with the old schema, but historical Reply-To values that were never stored cannot be recovered automatically.
+- 回复头缺失或供应商未返回 RFC Message-ID 时，会话关联可能不完整；超大会话/扫描达到保护上限时界面会提示。草稿仍只保存在当前浏览器；自动更新采用轮询。累计邮箱容量配额尚未实现。
+- Threading may be incomplete when reply headers or provider RFC Message-ID values are unavailable; the UI reports conversation/scan limits. Drafts remain browser-local, updates use polling, and cumulative mailbox storage quotas are not implemented.
+- 验证基线：Worker **324**、Web **121**、部署脚本 **5** 项通过；正式版与 Pages 构建、产物页面/资源冒烟及草稿删除浏览器验证通过。未重新执行线上真实收发；附件浏览器上传验收受工具限制，保存事务有自动测试覆盖。构建仍有既有的大分块提示。
+- Validation baseline: **324 Worker**, **121 Web** and **5 deployment-script** tests passed, along with production/Pages builds, artifact route/asset smoke checks and browser draft-deletion verification. Live delivery was not rerun; browser attachment-upload verification was limited by tooling, with persistence covered by automated tests. Existing large-chunk build warnings remain.
+- 本 Release 发布源码，不代表已经部署 Cloudflare Worker/Pages 或执行生产数据库迁移。
+- This Release publishes source code; it does not imply Cloudflare Worker/Pages deployment or production database migration.
+
+## v1.0.3 — 2026-09-20
+
+### 新增 / Added
+
+- **主题与个性化定制 / Theme & Accent Customization**:
+  - 新增外观主题卡片（`ThemeCard`），支持浅色（Light）、深色（Dark）及跟随系统（System）模式切换。
+  - 支持自定义品牌强调色（Accent Color），提供多套精选预设色板与自定义拾色，并引入首屏快速注入防闪烁脚本（`theme-init.js`）。
+  - Added `ThemeCard` component supporting Light, Dark, and System theme modes.
+  - Added custom brand accent color picker with presets, persistent local storage, and an anti-flicker pre-bundle boot script (`theme-init.js`).
+- **设置页分区导航 / Section-based Settings Navigation**:
+  - 个人设置页面重构为独立分区卡片布局（个人资料 Profile、外观 Theme、邮箱别名 Mailboxes、安全验证 Security 等），提升配置效率与移动端可读性。
+  - Refactored settings page into dedicated section-based cards (Profile, Theme, Mailboxes, Security) with improved responsive navigation and drawer support.
+
+### 优化 / Improved
+
+- **交互微动效与过渡体系 / Micro-interactions & Transition System**:
+  - 引入完整的物理动效令牌体系（`--motion-instant`、`--motion-fast`、`--motion-base`、`--ease-spring`）。
+  - 全局交互元素（按钮、图标、卡片等）接入 `:active` 物理按压弹性反馈（`translateY(1px) scale(0.985)`）。
+  - 主工作区路由视图引入平滑的 `page-fade-slide` 页面淡入位移过渡。
+  - 写信弹窗接入 `modal-scale` 弹性缩放过渡，消除窗口突兀弹出的生硬感。
+  - 设置与系统设置 Tab 切换接入 `tab-fade` 柔和渐变过渡。
+  - 骨架屏注入顺滑的扫光动画（Shimmer），首屏加载 Loading 增加淡出过渡。
+  - 星标按钮增加点击脉冲放大动画，验证码与口令复制增加瞬时绿色脉冲反馈。
+  - Introduced design tokens for motion durations and easing curves across the web application.
+  - Added physical active press feedback (`translateY(1px) scale(0.985)`) for interactive buttons, icons, and cards.
+  - Implemented `page-fade-slide` transitions for main workspace view navigation.
+  - Implemented `modal-scale` elastic scale animations for the compose email modal dialog.
+  - Added `tab-fade` soft fading transitions for settings and system settings tabs.
+  - Added shimmering sweep animations to skeleton rows and smooth fade-out to initial app loading.
+  - Enhanced star toggle with pulse animations and verification code copy with instant feedback.
+- **邮件列表已读与未读视觉区分度 / Email List Read & Unread Visual Hierarchy**:
+  - 遵循纸墨风格设计理念（不使用小圆点），完全通过温润色阶与文字层级实现清晰区分。
+  - 未读邮件使用高亮纯白背景（`var(--surface)`），发件人与主题加粗浓黑（`font-weight: 700; color: var(--text-strong)`），时间以品牌色醒目呈现。
+  - 已读邮件采用信纸柔和灰背景（`var(--paper-soft)`），发件人与主题呈雅致淡灰（`var(--faint)`），悬停（hover）时平滑提亮并恢复浓墨清晰度。
+  - Strengthened visual contrast between read and unread emails without introducing unread dots.
+  - Unread emails feature pure white highlighted surface background, bold dark ink typography (`font-weight: 700; color: var(--text-strong)`), and accent-highlighted timestamps.
+  - Read emails feature soft paper gray background (`var(--paper-soft)`) and muted ink typography (`var(--faint)`), smoothly brightening and restoring text contrast on hover.
+
+## v1.0.2 — 2026-09-18
+
+### Added
+
+- Deploy to Cloudflare entry in the bilingual README and Docs, with a public root Worker configuration and installation-secret guidance.
+- Deployment-launcher regression tests covering existing instance configuration, explicit configuration and local development protection.
+
+### Improved
+
+- New-installation guides prioritize the browser deployment flow and Web setup; command-line deployment remains available as an advanced route.
+- Update guides explain how to preserve the existing database, storage bindings and customized configuration when updating a deploy-button instance.
+
+### Validation scope
+
+- Local builds and Worker packaging were verified. Cloudflare deployment-form secret collection, remote resource provisioning and repository ID writeback still require an end-to-end platform check.
+
+## v1.0.1 — 2026-09-18
+
+### Optimized
+
+- Docs page experience: refreshed documentation page design with clean white aesthetics, enlarged brand identity, streamlined navigation, and smoother page/theme/language transition animations.
+- Docs directory structure: renamed the primary documentation group to "Quick start" (快速开始) to provide a clearer initial onboarding path.
+- Code syntax highlighting: added lightweight zero-dependency token coloring for shell commands, JSON, HTTP requests, and JavaScript in documentation code blocks.
+
+## v1.0.0 — 2026-09-17
+
+First formal release of FlareMail, an invitation-based private mailbox on your own domain.
+
+### Included
+
+- A single Cloudflare Worker serves the Web interface, API and incoming mail handler; D1/KV are required and R2 object storage is optional.
+- Multiple domains and mailbox addresses, mail reading and organization, composing, replies, forwarding, attachments, contacts and browser-local drafts.
+- Administrator-created invited members, per-user mail access, Web setup, centralized settings and custom branding.
+- Chinese/English interfaces, light/dark appearance, responsive layout, keyboard shortcuts and PWA installation.
+- Personal CLI / Agent tokens and optional first-party OAuth authorization; optional linked Google sign-in and Turnstile verification.
+- Resend sending by default, with optional Cloudflare Email Sending (Beta).
+- A separate static Pages experience with sample data and bilingual Docs.
+
+### Before deployment
+
+- Configure receiving DNS/routing and verify the selected sending provider; test delivery with an external mailbox.
+- Browser drafts do not synchronize across devices. IMAP, POP3 and SMTP client access are not provided.
+- Back up D1 and attachment/brand objects separately before upgrades or storage changes. Current database schema: 324.
+
+[中文部署文档](https://flaremail-demo.pages.dev/docs/zh/deployment) · [English deployment guide](https://flaremail-demo.pages.dev/docs/en/deployment)
